@@ -1,52 +1,57 @@
-<<<<<<< HEAD
 /**
  * Success Response
  */
-const successResponse = (res, data, message = 'Success', statusCode = 200) => {
-=======
-// =============================================================================
-// apiResponse.js
-// Standardized JSON response helpers used across all controllers.
-// Keeps response shape consistent throughout the entire API.
-// =============================================================================
+const successResponse = (res, data, message = "Success", statusCode = 200) => {
+  // =============================================================================
+  // apiResponse.js
+  // Standardized JSON response helpers used across all controllers.
+  // Keeps response shape consistent throughout the entire API.
+  // =============================================================================
 
-/**
- * Send a success response
- * @param {import('express').Response} res
- * @param {any} data
- * @param {string} message
- * @param {number} statusCode
- */
-function successResponse(res, data = null, message = 'Success', statusCode = 200) {
->>>>>>> 73bf2d23b1fce59b2923124e70c07c9a4321f788
-  return res.status(statusCode).json({
-    success: true,
-    message,
-    data,
-  });
-<<<<<<< HEAD
-};
-
-/**
- * Error Response
- */
-const errorResponse = (res, message = 'Error', statusCode = 500, errors = null) => {
-  const response = {
-    success: false,
-    message,
-  };
-  if (errors) {
-    response.errors = errors;
+  /**
+   * Send a success response
+   * @param {import('express').Response} res
+   * @param {any} data
+   * @param {string} message
+   * @param {number} statusCode
+   */
+  function successResponse(
+    res,
+    data = null,
+    message = "Success",
+    statusCode = 200,
+  ) {
+    return res.status(statusCode).json({
+      success: true,
+      message,
+      data,
+    });
   }
-  return res.status(statusCode).json(response);
-};
 
-module.exports = {
-  successResponse,
-  errorResponse,
+  /**
+   * Error Response
+   */
+  const errorResponse = (
+    res,
+    message = "Error",
+    statusCode = 500,
+    errors = null,
+  ) => {
+    const response = {
+      success: false,
+      message,
+    };
+    if (errors) {
+      response.errors = errors;
+    }
+    return res.status(statusCode).json(response);
+  };
+
+  module.exports = {
+    successResponse,
+    errorResponse,
+  };
 };
-=======
-}
 
 /**
  * Send an error response
@@ -55,7 +60,12 @@ module.exports = {
  * @param {number} statusCode
  * @param {any} errors
  */
-function errorResponse(res, message = 'Something went wrong', statusCode = 400, errors = null) {
+function errorResponse(
+  res,
+  message = "Something went wrong",
+  statusCode = 400,
+  errors = null,
+) {
   return res.status(statusCode).json({
     success: false,
     message,
@@ -64,4 +74,3 @@ function errorResponse(res, message = 'Something went wrong', statusCode = 400, 
 }
 
 module.exports = { successResponse, errorResponse };
->>>>>>> 73bf2d23b1fce59b2923124e70c07c9a4321f788
