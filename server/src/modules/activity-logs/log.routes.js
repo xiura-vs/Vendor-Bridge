@@ -1,4 +1,18 @@
+// =============================================================================
+// log.routes.js
+// =============================================================================
+
 const { Router } = require('express');
+const logController = require('./log.controller');
+const { authenticate, authorizeRoles } = require('../../middleware/auth');
+
 const router = Router();
-router.get('/', (req, res) => res.json({ message: 'Activity Logs module — coming soon' }));
+
+router.get(
+  '/',
+  authenticate,
+  authorizeRoles('ADMIN', 'MANAGER'),
+  logController.getAllLogs
+);
+
 module.exports = router;

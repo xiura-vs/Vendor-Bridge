@@ -2,9 +2,10 @@ const express = require('express');
 const cors = require('cors');
 const config = require('./config/env');
 const { requestLogger } = require('./middleware/requestLogger');
-const errorHandler = require('./middleware/errorHandler'); // ← no curly braces
+const errorHandler = require('./middleware/errorHandler');
 
 // --- Route Imports ---
+const authRoutes = require('./modules/auth/auth.routes');      // ← ADD
 const vendorRoutes = require('./modules/vendors/vendor.routes');
 const rfqRoutes = require('./modules/rfq/rfq.routes');
 const quotationRoutes = require('./modules/quotation/quotation.routes');
@@ -28,6 +29,7 @@ app.get('/health', (req, res) => {
 });
 
 // --- API Routes ---
+app.use('/api/v1/auth', authRoutes);                          // ← ADD FIRST
 app.use('/api/v1/vendors', vendorRoutes);
 app.use('/api/v1/rfq', rfqRoutes);
 app.use('/api/v1/quotations', quotationRoutes);
