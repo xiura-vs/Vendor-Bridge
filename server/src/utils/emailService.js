@@ -59,6 +59,14 @@ const sendPasswordResetEmail = async (to, resetToken) => {
     throw new Error("Failed to send reset email");
   }
 };
+// Test the SMTP connection on startup
+transporter.verify((error, success) => {
+  if (error) {
+    console.error("❌ SMTP Connection Failed:", error.message);
+  } else {
+    console.log("✅ SMTP Connection Successful! Ready to send emails.");
+  }
+});
 
 module.exports = {
   sendPasswordResetEmail,
