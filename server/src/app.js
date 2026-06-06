@@ -2,9 +2,9 @@ const express = require('express');
 const cors = require('cors');
 const config = require('./config/env');
 const { requestLogger } = require('./middleware/requestLogger');
-const { errorHandler } = require('./middleware/errorHandler');
+const errorHandler = require('./middleware/errorHandler'); // ← no curly braces
 
-// --- Route Imports (matching your exact folder/file names) ---
+// --- Route Imports ---
 const vendorRoutes = require('./modules/vendors/vendor.routes');
 const rfqRoutes = require('./modules/rfq/rfq.routes');
 const quotationRoutes = require('./modules/quotation/quotation.routes');
