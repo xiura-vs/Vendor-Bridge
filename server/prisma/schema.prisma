@@ -1,0 +1,358 @@
+// =============================================================================
+// VendorBridge — Prisma Schema
+// Production-grade schema for a Procurement & Vendor Management ERP
+// All IDs are UUIDs. All monetary values use Decimal. Enums are native Postgres.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// ENUMS — All persisted as native Postgres enum types
+// ---------------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  PROCUREMENT_OFFICER
+  VENDOR
+  MANAGER
+}
+
+enum VendorStatus {
+  ACTIVE
+  INACTIVE
+  BLACKLISTED
+}
+
+enum RFQStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+  CANCELLED
+}
+
+enum QuotationStatus {
+  PENDING
+  SUBMITTED
+  ACCEPTED
+  REJECTED
+  REVISED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum POStatus {
+  DRAFT
+  ISSUED
+  ACKNOWLEDGED
+  COMPLETED
+  CANCELLED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: User
+// Central identity table. Every actor in the system (admin, officer, vendor,
+// manager) is a user. Role drives authorization across all modules.
+// ---------------------------------------------------------------------------
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  password_hash String
+  full_name     String
+  role          Role
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  // Relations
+  vendor             Vendor?       // One user may own one vendor profile
+  created_rfqs       Rfq[]         @relation("RfqCreatedBy")
+  requested_approvals Approval[]   @relation("ApprovalRequestedBy")
+  resolved_approvals  Approval[]   @relation("ApprovalApprovedBy")
+  issued_pos         PurchaseOrder[] @relation("POApprovedBy")
+  activity_logs      ActivityLog[]
+
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: Vendor
+// Represents a supplier company. Linked 1:1 to a User with role=VENDOR.
+// Tracks business identity (GST, PAN) and current onboarding status.
+// ---------------------------------------------------------------------------
+model Vendor {
+  id            String       @id @default(uuid())
+  name          String
+  category      String
+  gst_number    String?      @unique
+  pan_number    String?      @unique
+  contact_email String
+  contact_phone String
+  address       String
+  status        VendorStatus @default(ACTIVE)
+  user_id       String       @unique
+  created_at    DateTime     @default(now())
+  updated_at    DateTime     @updatedAt
+
+  // Relations
+  user          User          @relation(fields: [user_id], references: [id])
+  rfq_vendors   RfqVendor[]
+  quotations    Quotation[]
+  purchase_orders PurchaseOrder[]
+
+  @@index([user_id])
+  @@index([status])
+  @@map("vendors")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: Rfq (Request for Quotation)
+// A procurement request created by an officer. Defines what is needed and
+// by when. Vendors are invited via the rfq_vendors join table.
+// ---------------------------------------------------------------------------
+model Rfq {
+  id          String    @id @default(uuid())
+  rfq_number  String    @unique          // e.g. RFQ-2024-0001 — set via middleware
+  title       String
+  description String?
+  deadline    DateTime
+  status      RFQStatus @default(DRAFT)
+  created_by  String
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  // Relations
+  creator     User        @relation("RfqCreatedBy", fields: [created_by], references: [id])
+  items       RfqItem[]
+  rfq_vendors RfqVendor[]
+  quotations  Quotation[]
+  approvals   Approval[]
+
+  @@index([created_by])
+  @@index([status])
+  @@map("rfqs")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: RfqItem
+// Line items within an RFQ describing individual products/services required.
+// Each item becomes a row that vendors quote against via QuotationItem.
+// ---------------------------------------------------------------------------
+model RfqItem {
+  id             String  @id @default(uuid())
+  rfq_id         String
+  product_name   String
+  description    String?
+  quantity       Decimal
+  unit           String   // e.g. "pcs", "kg", "litre", "box"
+  specifications String?
+
+  // Relations
+  rfq              Rfq             @relation(fields: [rfq_id], references: [id], onDelete: Cascade)
+  quotation_items  QuotationItem[]
+
+  @@index([rfq_id])
+  @@map("rfq_items")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: RfqVendor  (Join Table)
+// Many-to-many between RFQs and Vendors. Tracks which vendors were invited
+// to quote on a given RFQ and whether they have responded.
+// ---------------------------------------------------------------------------
+model RfqVendor {
+  rfq_id      String
+  vendor_id   String
+  invited_at  DateTime @default(now())
+  responded   Boolean  @default(false)
+
+  // Relations
+  rfq    Rfq    @relation(fields: [rfq_id], references: [id], onDelete: Cascade)
+  vendor Vendor @relation(fields: [vendor_id], references: [id])
+
+  @@id([rfq_id, vendor_id])   // Composite primary key
+  @@index([rfq_id])
+  @@index([vendor_id])
+  @@map("rfq_vendors")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: Quotation
+// A vendor's formal price response to an RFQ. One vendor submits one
+// quotation per RFQ. Status progresses through the approval lifecycle.
+// ---------------------------------------------------------------------------
+model Quotation {
+  id            String          @id @default(uuid())
+  rfq_id        String
+  vendor_id     String
+  notes         String?
+  delivery_days Int
+  validity_days Int
+  status        QuotationStatus @default(PENDING)
+  submitted_at  DateTime?
+  created_at    DateTime        @default(now())
+  updated_at    DateTime        @updatedAt
+
+  // Relations
+  rfq             Rfq             @relation(fields: [rfq_id], references: [id])
+  vendor          Vendor          @relation(fields: [vendor_id], references: [id])
+  items           QuotationItem[]
+  approvals       Approval[]
+  purchase_orders PurchaseOrder[]
+
+  @@unique([rfq_id, vendor_id])  // One quotation per vendor per RFQ
+  @@index([rfq_id])
+  @@index([vendor_id])
+  @@index([status])
+  @@map("quotations")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: QuotationItem
+// Line-level pricing submitted by a vendor for each RfqItem.
+// unit_price and total_price are Decimal to avoid floating-point errors.
+// ---------------------------------------------------------------------------
+model QuotationItem {
+  id            String  @id @default(uuid())
+  quotation_id  String
+  rfq_item_id   String
+  unit_price    Decimal @db.Decimal(15, 4)
+  quantity      Decimal @db.Decimal(15, 4)
+  total_price   Decimal @db.Decimal(15, 4)
+
+  // Relations
+  quotation Quotation @relation(fields: [quotation_id], references: [id], onDelete: Cascade)
+  rfq_item  RfqItem   @relation(fields: [rfq_item_id], references: [id])
+
+  @@index([quotation_id])
+  @@index([rfq_item_id])
+  @@map("quotation_items")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: Approval
+// Workflow record for manager approval of an RFQ or selected Quotation.
+// Supports both pre-quote approval (rfq level) and post-quote approval.
+// ---------------------------------------------------------------------------
+model Approval {
+  id            String         @id @default(uuid())
+  rfq_id        String
+  quotation_id  String?        // Nullable — approval may target the RFQ itself
+  requested_by  String
+  approved_by   String?        // Nullable until resolved
+  status        ApprovalStatus @default(PENDING)
+  remarks       String?
+  requested_at  DateTime       @default(now())
+  resolved_at   DateTime?
+
+  // Relations
+  rfq           Rfq       @relation(fields: [rfq_id], references: [id])
+  quotation     Quotation? @relation(fields: [quotation_id], references: [id])
+  requester     User      @relation("ApprovalRequestedBy", fields: [requested_by], references: [id])
+  approver      User?     @relation("ApprovalApprovedBy", fields: [approved_by], references: [id])
+
+  @@index([rfq_id])
+  @@index([quotation_id])
+  @@index([requested_by])
+  @@index([approved_by])
+  @@index([status])
+  @@map("approvals")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: PurchaseOrder
+// Formal commitment issued to a vendor after quotation approval.
+// po_number is auto-generated (e.g. PO-2024-0001) via Prisma middleware.
+// ---------------------------------------------------------------------------
+model PurchaseOrder {
+  id            String   @id @default(uuid())
+  po_number     String   @unique         // e.g. PO-2024-0001
+  quotation_id  String
+  approved_by   String
+  vendor_id     String
+  status        POStatus @default(DRAFT)
+  terms         String?
+  issued_at     DateTime?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  // Relations
+  quotation Quotation @relation(fields: [quotation_id], references: [id])
+  approver  User      @relation("POApprovedBy", fields: [approved_by], references: [id])
+  vendor    Vendor    @relation(fields: [vendor_id], references: [id])
+  invoice   Invoice?
+
+  @@index([quotation_id])
+  @@index([approved_by])
+  @@index([vendor_id])
+  @@index([status])
+  @@map("purchase_orders")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: Invoice
+// Financial document generated from a completed PO. Stores tax breakdown
+// and payment status. invoice_number auto-generated via middleware.
+// ---------------------------------------------------------------------------
+model Invoice {
+  id             String        @id @default(uuid())
+  invoice_number String        @unique         // e.g. INV-2024-0001
+  po_id          String        @unique         // One invoice per PO
+  tax_rate       Decimal       @db.Decimal(5, 2)
+  tax_amount     Decimal       @db.Decimal(15, 4)
+  subtotal       Decimal       @db.Decimal(15, 4)
+  total_amount   Decimal       @db.Decimal(15, 4)
+  due_date       DateTime
+  status         InvoiceStatus @default(DRAFT)
+  sent_at        DateTime?
+  paid_at        DateTime?
+  created_at     DateTime      @default(now())
+  updated_at     DateTime      @updatedAt
+
+  // Relations
+  purchase_order PurchaseOrder @relation(fields: [po_id], references: [id])
+
+  @@index([po_id])
+  @@index([status])
+  @@map("invoices")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: ActivityLog
+// Immutable audit trail. Every meaningful state change across all modules
+// is recorded here. metadata stores context-specific JSON payload.
+// ---------------------------------------------------------------------------
+model ActivityLog {
+  id          String   @id @default(uuid())
+  user_id     String?  // Nullable for system-generated events
+  action      String   // e.g. "RFQ_PUBLISHED", "QUOTATION_SUBMITTED"
+  entity_type String   // e.g. "Rfq", "Quotation", "PurchaseOrder"
+  entity_id   String
+  metadata    Json     @default("{}")
+  created_at  DateTime @default(now())
+
+  // Relations
+  user User? @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id])
+  @@index([entity_type, entity_id])
+  @@index([created_at])
+  @@map("activity_logs")
+}
