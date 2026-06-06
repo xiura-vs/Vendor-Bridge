@@ -77,6 +77,8 @@ model User {
   password_hash String
   full_name     String
   role          Role
+  reset_password_token   String?
+  reset_password_expires DateTime?
   is_active     Boolean  @default(true)
   created_at    DateTime @default(now())
   updated_at    DateTime @updatedAt
